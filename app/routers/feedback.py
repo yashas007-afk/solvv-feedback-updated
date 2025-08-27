@@ -2,9 +2,15 @@ from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
-from ..database import get_db
-from ..exceptions import FeedbackNotFoundError
+from ..schemas import feedback as schemas
+from ..init.database import get_db
+from ..services.feedback import (
+    create_feedback,
+    list_feedbacks,
+    get_feedback_or_raise,
+    update_feedback as update_feedback_service,
+    delete_feedback as delete_feedback_service,
+)
 
 router = APIRouter(tags=["feedback"]) 
 
@@ -14,51 +20,21 @@ def preview_feedback(feedback: schemas.FeedbackCreate):
 
 @router.post("/feedback/submit", response_model=schemas.FeedbackOut)
 def submit_feedback(feedback: schemas.FeedbackCreate, db: Session = Depends(get_db)):
-    db_feedback = models.Feedback(
-        title=feedback.title,
-        client_type=feedback.client_type,
-        course_name=feedback.course_name,
-        date=feedback.date,
-        client_name=feedback.client_name,
-        questions=feedback.questions,
-        time=feedback.time,
-    )
-    db.add(db_feedback)
-    db.commit()
-    db.refresh(db_feedback)
-    return db_feedback
+    return create_feedback(db, feedback)
 
 @router.get("/feedbacks", response_model=List[schemas.FeedbackOut])
 def get_feedbacks(db: Session = Depends(get_db)):
-    return db.query(models.Feedback).all()
+    return list_feedbacks(db)
 
 @router.get("/feedbacks/{feedback_id}", response_model=schemas.FeedbackOut)
 def get_feedback(feedback_id: int, db: Session = Depends(get_db)):
-    feedback = db.query(models.Feedback).filter(models.Feedback.id == feedback_id).first()
-    if not feedback:
-        raise FeedbackNotFoundError(feedback_id)
-    return feedback
+    return get_feedback_or_raise(db, feedback_id)
 
 @router.put("/feedbacks/{feedback_id}", response_model=schemas.FeedbackOut)
 def update_feedback(feedback_id: int, updated: schemas.FeedbackUpdate, db: Session = Depends(get_db)):
-    db_feedback = db.query(models.Feedback).filter(models.Feedback.id == feedback_id).first()
-    if not db_feedback:
-        raise FeedbackNotFoundError(feedback_id)
-
-    update_data = updated.model_dump(exclude_unset=True, exclude_none=True)
-    for field_name, value in update_data.items():
-        setattr(db_feedback, field_name, value)
-
-    db.commit()
-    db.refresh(db_feedback)
-    return db_feedback
+    return update_feedback_service(db, feedback_id, updated)
 
 @router.delete("/feedbacks/{feedback_id}")
 def delete_feedback(feedback_id: int, db: Session = Depends(get_db)):
-    db_feedback = db.query(models.Feedback).filter(models.Feedback.id == feedback_id).first()
-    if not db_feedback:
-        raise FeedbackNotFoundError(feedback_id)
-
-    db.delete(db_feedback)
-    db.commit()
+    delete_feedback_service(db, feedback_id)
     return {"message": f"Feedback with ID {feedback_id} deleted successfully"}
